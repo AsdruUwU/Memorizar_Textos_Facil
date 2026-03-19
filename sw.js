@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lingopad-v2';
+const CACHE_NAME = 'lingopad-v3';
 const ASSETS = [
   './',
   './index.html',

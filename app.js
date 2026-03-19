@@ -83,6 +83,34 @@ function ConfirmModal({ title, message, onConfirm, onCancel }) {
   );
 }
 
+// ─── Voice Selector component (reusable) ────────────────────────────────────
+function VoiceSelector({ voices, voiceName, onChange, style }) {
+  const uniqueVoices = useMemo(() => {
+    const seen = new Map();
+    voices.forEach(v => {
+      if (!seen.has(v.lang)) seen.set(v.lang, v);
+    });
+    return Array.from(seen.values());
+  }, [voices]);
+
+  return React.createElement('select', {
+    className: 'lang-selector',
+    value: voiceName || '',
+    onChange: e => onChange(e.target.value),
+    title: 'Idioma del texto',
+    style: style || {}
+  },
+    React.createElement('option', { value: '', disabled: true }, '🌐 Seleccionar idioma'),
+    !voices.length
+      ? React.createElement('option', null, 'Cargando…')
+      : uniqueVoices.map(v =>
+          React.createElement('option', { key: v.name, value: v.name },
+            `${v.lang} – ${v.name.slice(0, 22)}`
+          )
+        )
+  );
+}
+
 // ─── Text List (Home) ────────────────────────────────────────────────────────
 function TextList({ texts, onSelect, onDelete }) {
   const [confirmId, setConfirmId] = useState(null);
@@ -111,7 +139,10 @@ function TextList({ texts, onSelect, onDelete }) {
           React.createElement('div', { className: 'card-meta' },
             React.createElement('span', null, new Date(t.updatedAt).toLocaleDateString()),
             React.createElement('span', null, '•'),
-            React.createElement('span', null, `${t.content.split(/\s+/).length} palabras`)
+            React.createElement('span', null, `${t.content.split(/\s+/).length} palabras`),
+            t.voiceName ? React.createElement('span', {
+              className: 'lang-badge'
+            }, '🌐 ' + (t.voiceName.split(' ')[0] || t.voiceName).slice(0, 12)) : null
           )
         ),
         React.createElement('div', { className: 'actions-row' },
@@ -133,13 +164,14 @@ function TextList({ texts, onSelect, onDelete }) {
 }
 
 // ─── Text Editor ─────────────────────────────────────────────────────────────
-function TextEditor({ initial, onSave, onCancel }) {
+function TextEditor({ initial, onSave, onCancel, voices }) {
   const [title, setTitle] = useState(initial ? initial.title : '');
   const [content, setContent] = useState(initial ? initial.content : '');
+  const [voiceName, setVoiceName] = useState(initial ? (initial.voiceName || '') : '');
 
   const handleSave = () => {
     if (!content.trim()) return;
-    onSave({ title: title.trim() || 'Sin título', content: content.trim() });
+    onSave({ title: title.trim() || 'Sin título', content: content.trim(), voiceName });
   };
 
   return React.createElement('div', { className: 'animate-slide-up' },
@@ -150,6 +182,15 @@ function TextEditor({ initial, onSave, onCancel }) {
         placeholder: 'Ej: Capítulo 1 – Present Perfect',
         value: title,
         onChange: e => setTitle(e.target.value)
+      })
+    ),
+    React.createElement('div', { className: 'form-group' },
+      React.createElement('label', { className: 'form-label' }, 'Idioma del texto'),
+      React.createElement(VoiceSelector, {
+        voices: voices,
+        voiceName: voiceName,
+        onChange: setVoiceName,
+        style: { maxWidth: '100%', width: '100%' }
       })
     ),
     React.createElement('div', { className: 'form-group' },
@@ -358,10 +399,29 @@ function mulberry32(a) {
 }
 
 // ─── Text Detail Screen (Tabs: Reader + Study) ──────────────────────────────
-function TextDetail({ text, voice, onBack, onEdit }) {
+function TextDetail({ text, voices, onBack, onEdit, onChangeVoice }) {
   const [tab, setTab] = useState('reader');
 
+  const voice = useMemo(() =>
+    voices.find(v => v.name === text.voiceName) || voices[0] || null,
+    [voices, text.voiceName]
+  );
+
   return React.createElement('div', null,
+    // Language selector bar for this text
+    React.createElement('div', {
+      style: { display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }
+    },
+      React.createElement('span', {
+        style: { fontSize: '0.8rem', color: 'var(--clr-text-muted)', whiteSpace: 'nowrap' }
+      }, '🌐 Voz:'),
+      React.createElement(VoiceSelector, {
+        voices: voices,
+        voiceName: text.voiceName || '',
+        onChange: onChangeVoice,
+        style: { flex: 1, maxWidth: '260px' }
+      })
+    ),
     React.createElement('div', { className: 'tabs' },
       React.createElement('button', {
         className: `tab${tab === 'reader' ? ' active' : ''}`,
@@ -391,38 +451,30 @@ function App() {
   const [theme, toggleTheme] = useTheme();
 
   const voices = useVoices();
-  const [voiceName, setVoiceName] = useLocalStorage('lingopad_voice', '');
-  const selectedVoice = useMemo(() =>
-    voices.find(v => v.name === voiceName) || voices[0] || null,
-    [voices, voiceName]
-  );
-
-  // Group voices by lang
-  const uniqueVoices = useMemo(() => {
-    const seen = new Map();
-    voices.forEach(v => {
-      if (!seen.has(v.lang)) seen.set(v.lang, v);
-    });
-    return Array.from(seen.values());
-  }, [voices]);
 
   const activeText = useMemo(() => texts.find(t => t.id === activeId), [texts, activeId]);
 
   const showToast = msg => { setToast(msg); setTimeout(() => setToast(null), 2400); };
 
-  const handleSaveNew = ({ title, content }) => {
-    const t = { id: uid(), title, content, createdAt: Date.now(), updatedAt: Date.now() };
+  const handleSaveNew = ({ title, content, voiceName }) => {
+    const t = { id: uid(), title, content, voiceName, createdAt: Date.now(), updatedAt: Date.now() };
     setTexts(prev => [t, ...prev]);
     setScreen('home');
     showToast('✅ Texto guardado');
   };
 
-  const handleSaveEdit = ({ title, content }) => {
+  const handleSaveEdit = ({ title, content, voiceName }) => {
     setTexts(prev => prev.map(t =>
-      t.id === activeId ? { ...t, title, content, updatedAt: Date.now() } : t
+      t.id === activeId ? { ...t, title, content, voiceName, updatedAt: Date.now() } : t
     ));
     setScreen('detail');
     showToast('✅ Cambios guardados');
+  };
+
+  const handleChangeVoice = (newVoiceName) => {
+    setTexts(prev => prev.map(t =>
+      t.id === activeId ? { ...t, voiceName: newVoiceName, updatedAt: Date.now() } : t
+    ));
   };
 
   const handleDelete = id => {
@@ -452,21 +504,6 @@ function App() {
     '📝 LingoPad'
   );
 
-  const langSelect = React.createElement('select', {
-    className: 'lang-selector',
-    value: voiceName,
-    onChange: e => setVoiceName(e.target.value),
-    title: 'Seleccionar idioma/voz'
-  },
-    !voices.length
-      ? React.createElement('option', null, 'Cargando…')
-      : uniqueVoices.map(v =>
-          React.createElement('option', { key: v.name, value: v.name },
-            `${v.lang} – ${v.name.slice(0, 22)}`
-          )
-        )
-  );
-
   // ── Content ──
   let content;
   if (screen === 'home') {
@@ -481,21 +518,24 @@ function App() {
   } else if (screen === 'new') {
     content = React.createElement(TextEditor, {
       initial: null,
+      voices: voices,
       onSave: handleSaveNew,
       onCancel: () => setScreen('home')
     });
   } else if (screen === 'edit' && activeText) {
     content = React.createElement(TextEditor, {
       initial: activeText,
+      voices: voices,
       onSave: handleSaveEdit,
       onCancel: () => setScreen('detail')
     });
   } else if (screen === 'detail' && activeText) {
     content = React.createElement(TextDetail, {
       text: activeText,
-      voice: selectedVoice,
+      voices: voices,
       onBack: () => { setScreen('home'); setActiveId(null); },
-      onEdit: () => setScreen('edit')
+      onEdit: () => setScreen('edit'),
+      onChangeVoice: handleChangeVoice
     });
   }
 
@@ -511,10 +551,7 @@ function App() {
         headerLeft,
         headerTitle
       ),
-      React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '0.5rem' } },
-        langSelect,
-        themeToggle
-      )
+      themeToggle
     ),
     React.createElement('main', { className: 'main-content' }, content),
     toast && React.createElement(Toast, { message: toast, onDone: () => setToast(null) })
