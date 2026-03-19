@@ -122,6 +122,37 @@ body {
 }
 .lang-selector:focus { border-color: var(--clr-accent); }
 
+/* ===== Voice + Speed Bar ===== */
+.voice-speed-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.speed-slider {
+  width: 80px;
+  min-width: 60px;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 5px;
+  background: var(--clr-border);
+  border-radius: 99px;
+  outline: none;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.speed-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--clr-accent);
+  box-shadow: 0 1px 6px rgba(99, 102, 241, 0.35);
+  cursor: pointer;
+}
+
 /* ===== Main Content ===== */
 .main-content {
   flex: 1;

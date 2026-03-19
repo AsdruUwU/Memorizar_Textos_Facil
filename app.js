@@ -33,11 +33,11 @@ function useVoices() {
   return voices;
 }
 
-function speak(text, voice) {
+function speak(text, voice, rate) {
   window.speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   if (voice) { u.voice = voice; u.lang = voice.lang; }
-  u.rate = 0.95;
+  u.rate = rate || 1;
   window.speechSynthesis.speak(u);
   return u;
 }
@@ -168,10 +168,11 @@ function TextEditor({ initial, onSave, onCancel, voices }) {
   const [title, setTitle] = useState(initial ? initial.title : '');
   const [content, setContent] = useState(initial ? initial.content : '');
   const [voiceName, setVoiceName] = useState(initial ? (initial.voiceName || '') : '');
+  const [voiceRate, setVoiceRate] = useState(initial ? (initial.voiceRate || 1) : 1);
 
   const handleSave = () => {
     if (!content.trim()) return;
-    onSave({ title: title.trim() || 'Sin título', content: content.trim(), voiceName });
+    onSave({ title: title.trim() || 'Sin título', content: content.trim(), voiceName, voiceRate });
   };
 
   return React.createElement('div', { className: 'animate-slide-up' },
@@ -185,13 +186,28 @@ function TextEditor({ initial, onSave, onCancel, voices }) {
       })
     ),
     React.createElement('div', { className: 'form-group' },
-      React.createElement('label', { className: 'form-label' }, 'Idioma del texto'),
-      React.createElement(VoiceSelector, {
-        voices: voices,
-        voiceName: voiceName,
-        onChange: setVoiceName,
-        style: { maxWidth: '100%', width: '100%' }
-      })
+      React.createElement('label', { className: 'form-label' }, 'Idioma y velocidad'),
+      React.createElement('div', { className: 'voice-speed-bar' },
+        React.createElement(VoiceSelector, {
+          voices: voices,
+          voiceName: voiceName,
+          onChange: setVoiceName,
+          style: { flex: 1 }
+        }),
+        React.createElement('span', {
+          style: { fontSize: '0.78rem', color: 'var(--clr-text-muted)', whiteSpace: 'nowrap' }
+        }, `${voiceRate.toFixed(2)}x`),
+        React.createElement('input', {
+          type: 'range',
+          min: 0.25,
+          max: 2,
+          step: 0.05,
+          value: voiceRate,
+          className: 'speed-slider',
+          onChange: e => setVoiceRate(Number(e.target.value)),
+          title: `Velocidad: ${voiceRate.toFixed(2)}x`
+        })
+      )
     ),
     React.createElement('div', { className: 'form-group' },
       React.createElement('label', { className: 'form-label' }, 'Contenido'),
@@ -211,13 +227,13 @@ function TextEditor({ initial, onSave, onCancel, voices }) {
 }
 
 // ─── Interactive Word ────────────────────────────────────────────────────────
-function Word({ word, voice, isBlank, revealed }) {
+function Word({ word, voice, rate, isBlank, revealed }) {
   const [speaking, setSpeaking] = useState(false);
 
   const handleClick = () => {
     if (isBlank && !revealed) return;
     setSpeaking(true);
-    const u = speak(word, voice);
+    const u = speak(word, voice, rate);
     u.onend = () => setSpeaking(false);
     u.onerror = () => setSpeaking(false);
     setTimeout(() => setSpeaking(false), 3000);
@@ -242,12 +258,12 @@ function Word({ word, voice, isBlank, revealed }) {
 }
 
 // ─── Paragraph Block ─────────────────────────────────────────────────────────
-function ParagraphBlock({ text, voice, blanks, revealed, index }) {
+function ParagraphBlock({ text, voice, rate, blanks, revealed, index }) {
   const [playing, setPlaying] = useState(false);
 
   const handlePlay = () => {
     setPlaying(true);
-    const u = speak(text, voice);
+    const u = speak(text, voice, rate);
     u.onend = () => setPlaying(false);
     u.onerror = () => setPlaying(false);
     // safety fallback
@@ -275,6 +291,7 @@ function ParagraphBlock({ text, voice, blanks, revealed, index }) {
           key: `${i}-${wi}`,
           word: token,
           voice: voice,
+          rate: rate,
           isBlank: isBlank,
           revealed: revealed
         });
@@ -284,7 +301,7 @@ function ParagraphBlock({ text, voice, blanks, revealed, index }) {
 }
 
 // ─── Reader View ─────────────────────────────────────────────────────────────
-function ReaderView({ text, voice }) {
+function ReaderView({ text, voice, rate }) {
   const paragraphs = useMemo(() =>
     text.content.split(/\n+/).filter(p => p.trim()),
     [text.content]
@@ -302,6 +319,7 @@ function ReaderView({ text, voice }) {
         key: i,
         text: p,
         voice: voice,
+        rate: rate,
         blanks: null,
         revealed: false,
         index: i
@@ -311,7 +329,7 @@ function ReaderView({ text, voice }) {
 }
 
 // ─── Study View ──────────────────────────────────────────────────────────────
-function StudyView({ text, voice }) {
+function StudyView({ text, voice, rate }) {
   const [difficulty, setDifficulty] = useState(30); // % of words hidden
   const [revealed, setRevealed] = useState(false);
   const [seed, setSeed] = useState(Date.now());
@@ -380,6 +398,7 @@ function StudyView({ text, voice }) {
         key: `${i}-${seed}`,
         text: p,
         voice: voice,
+        rate: rate,
         blanks: blanksPerParagraph[i],
         revealed: revealed,
         index: i
@@ -398,8 +417,18 @@ function mulberry32(a) {
   };
 }
 
+// ─── Speed Label Helper ──────────────────────────────────────────────────────
+function speedLabel(rate) {
+  const r = Number(rate) || 1;
+  if (r <= 0.5) return '🐢';
+  if (r <= 0.75) return '🐢';
+  if (r <= 1) return '🔈';
+  if (r <= 1.5) return '🔉';
+  return '🔊';
+}
+
 // ─── Text Detail Screen (Tabs: Reader + Study) ──────────────────────────────
-function TextDetail({ text, voices, onBack, onEdit, onChangeVoice }) {
+function TextDetail({ text, voices, onBack, onEdit, onChangeVoice, onChangeRate }) {
   const [tab, setTab] = useState('reader');
 
   const voice = useMemo(() =>
@@ -407,10 +436,12 @@ function TextDetail({ text, voices, onBack, onEdit, onChangeVoice }) {
     [voices, text.voiceName]
   );
 
+  const rate = text.voiceRate || 1;
+
   return React.createElement('div', null,
-    // Language selector bar for this text
+    // Language + Speed bar for this text
     React.createElement('div', {
-      style: { display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }
+      className: 'voice-speed-bar'
     },
       React.createElement('span', {
         style: { fontSize: '0.8rem', color: 'var(--clr-text-muted)', whiteSpace: 'nowrap' }
@@ -419,7 +450,20 @@ function TextDetail({ text, voices, onBack, onEdit, onChangeVoice }) {
         voices: voices,
         voiceName: text.voiceName || '',
         onChange: onChangeVoice,
-        style: { flex: 1, maxWidth: '260px' }
+        style: { flex: 1, maxWidth: '220px' }
+      }),
+      React.createElement('span', {
+        style: { fontSize: '0.8rem', color: 'var(--clr-text-muted)', whiteSpace: 'nowrap', marginLeft: '0.25rem' }
+      }, `${speedLabel(rate)} ${rate.toFixed(2)}x`),
+      React.createElement('input', {
+        type: 'range',
+        min: 0.25,
+        max: 2,
+        step: 0.05,
+        value: rate,
+        className: 'speed-slider',
+        onChange: e => onChangeRate(Number(e.target.value)),
+        title: `Velocidad: ${rate.toFixed(2)}x`
       })
     ),
     React.createElement('div', { className: 'tabs' },
@@ -437,8 +481,8 @@ function TextDetail({ text, voices, onBack, onEdit, onChangeVoice }) {
       }, '✏️ Editar')
     ),
     tab === 'reader'
-      ? React.createElement(ReaderView, { text, voice })
-      : React.createElement(StudyView, { text, voice })
+      ? React.createElement(ReaderView, { text, voice, rate })
+      : React.createElement(StudyView, { text, voice, rate })
   );
 }
 
@@ -456,16 +500,16 @@ function App() {
 
   const showToast = msg => { setToast(msg); setTimeout(() => setToast(null), 2400); };
 
-  const handleSaveNew = ({ title, content, voiceName }) => {
-    const t = { id: uid(), title, content, voiceName, createdAt: Date.now(), updatedAt: Date.now() };
+  const handleSaveNew = ({ title, content, voiceName, voiceRate }) => {
+    const t = { id: uid(), title, content, voiceName, voiceRate: voiceRate || 1, createdAt: Date.now(), updatedAt: Date.now() };
     setTexts(prev => [t, ...prev]);
     setScreen('home');
     showToast('✅ Texto guardado');
   };
 
-  const handleSaveEdit = ({ title, content, voiceName }) => {
+  const handleSaveEdit = ({ title, content, voiceName, voiceRate }) => {
     setTexts(prev => prev.map(t =>
-      t.id === activeId ? { ...t, title, content, voiceName, updatedAt: Date.now() } : t
+      t.id === activeId ? { ...t, title, content, voiceName, voiceRate: voiceRate || 1, updatedAt: Date.now() } : t
     ));
     setScreen('detail');
     showToast('✅ Cambios guardados');
@@ -474,6 +518,12 @@ function App() {
   const handleChangeVoice = (newVoiceName) => {
     setTexts(prev => prev.map(t =>
       t.id === activeId ? { ...t, voiceName: newVoiceName, updatedAt: Date.now() } : t
+    ));
+  };
+
+  const handleChangeRate = (newRate) => {
+    setTexts(prev => prev.map(t =>
+      t.id === activeId ? { ...t, voiceRate: newRate } : t
     ));
   };
 
@@ -535,7 +585,8 @@ function App() {
       voices: voices,
       onBack: () => { setScreen('home'); setActiveId(null); },
       onEdit: () => setScreen('edit'),
-      onChangeVoice: handleChangeVoice
+      onChangeVoice: handleChangeVoice,
+      onChangeRate: handleChangeRate
     });
   }
 
